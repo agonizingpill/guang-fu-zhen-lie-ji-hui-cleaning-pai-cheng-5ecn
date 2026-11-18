@@ -15,6 +15,19 @@ class SurveyState(StrEnum):
 class MissionState(StrEnum):
     DRAFT='draft'
     DISPATCHED='dispatched'
+    STOPPED='stopped'
     RETESTED='retested'
     ACCEPTED='accepted'
     SUPERSEDED='superseded'
+class DiagnosticState(StrEnum):
+    PENDING='pending'
+    EVALUATING='evaluating'
+    COMPLETED='completed'
+    MANUAL='manual'
+    BLOCKED='blocked'
+class FaultState(StrEnum):
+    AWAITING_REPAIR='awaiting_repair'
+    REPAIRED='repaired'
+    RECHECKING='rechecking'
+    RECOVERED='recovered'
+AWAITING_DIAGNOSIS_STATES=('pending','evaluating','manual','blocked')

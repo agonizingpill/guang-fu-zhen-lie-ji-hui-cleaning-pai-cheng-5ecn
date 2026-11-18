@@ -28,6 +28,8 @@ def dispatch(db,key,user):
     block=require(db,ArrayBlock,survey.block_id,True)
     if survey.state!='assessed':raise HTTPException(409,'巡测已失效或已有清洗排程')
     if block.cleaning_state=='washing':raise HTTPException(409,'同阵列已有执行中的清洗任务')
+    from .diagnosis_service import dispatch_guard
+    dispatch_guard(db,block)
     if mission.water_liters>mission.available_liters or mission.water_liters>block.water_liters:raise HTTPException(409,'计划用水超过阵列配额/水车余量，请修订水量后派工')
     from .permit_service import dispatch_guard
     dispatch_guard(db,mission)

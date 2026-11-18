@@ -5,6 +5,7 @@ from src.models import User,ArrayBlock,SoilingSurvey,WashMission
 from src.revisit_models import WaterDelivery,FollowupSurvey
 from src.auth import hash_password
 from src.operations_models import WashCrew
+from src.diagnosis_models import StringDiagnostic,StringCurrentSample,StringFault,WashSuspension
 
 def seed():
     Base.metadata.create_all(engine)
@@ -35,5 +36,24 @@ def seed():
             db.add(mission);db.flush()
         if not db.scalar(select(FollowupSurvey).where(FollowupSurvey.mission_id==mission.id,FollowupSurvey.days_after==2)):
             db.add(FollowupSurvey(mission_id=mission.id,days_after=2,irradiance=800,observed_kw=61,normalized_kw=61,normalized_loss=100/62,state='stable',baseline_snapshot={'post_kw':62,'post_irradiance':800,'accepted_at':mission.accepted_at.isoformat(),'block_id':block.id,'block_code':block.code,'survey_id':historical.id,'survey_code':historical.code,'threshold_pct':5}))
-        db.commit();print({key:db.scalar(select(func.count()).select_from(model)) for key,model in [('users',User),('blocks',ArrayBlock),('surveys',SoilingSurvey)]})
+        # 组串诊断演示：A02 一条已完成且建故障单，A01 一条样本不足转人工。均只补缺项，不改人工结果。
+        a02=db.scalar(select(ArrayBlock).where(ArrayBlock.code=='SL-A02'))
+        demo=db.scalar(select(StringDiagnostic).where(StringDiagnostic.code=='DG-DEMO-A02'))
+        if not demo:
+            demo=StringDiagnostic(code='DG-DEMO-A02',block_id=a02.id,kind='initial',state='completed',anomaly_strings=['S4'],created_by='admin@qingling.test',evidence={'status':'completed','method':'robust-z: 健康样本 median/MAD；独立留出校准阈值','median_a':10.0,'mad_a':0.1,'sigma_a':0.148,'threshold':3.15,'train_count':4,'holdout_count':2,'healthy_count':6,'sample_count':8,'samples_sha256':'demo-seed','train_samples':[{'string_code':f'S{i}','current_a':c} for i,c in[(1,10.0),(2,10.1),(3,9.9),(5,10.2)]],'holdout_samples':[{'string_code':'S6','current_a':10.0},{'string_code':'S7','current_a':9.8}],'candidate_scores':[{'string_code':'S4','current_a':4.3,'score':38.5,'anomalous':True}]})
+            for code,current,healthy in [('S1',10.0,True),('S2',10.1,True),('S3',9.9,True),('S5',10.2,True),('S6',10.0,True),('S7',9.8,True),('S4',4.3,False),('S8',10.0,False)]:
+                demo.samples.append(StringCurrentSample(string_code=code,current_a=current,healthy=healthy))
+            db.add(demo);db.flush()
+        if not db.scalar(select(StringFault).where(StringFault.diagnostic_id==demo.id)):
+            fault=StringFault(block_id=a02.id,diagnostic_id=demo.id,diagnostic_code=demo.code,latest_diagnostic_id=demo.id,state='awaiting_repair',strings=['S4'],evidence={**demo.evidence,'diagnostic_id':demo.id,'diagnostic_code':demo.code,'block_code':a02.code},reported_by='system',note='演示数据：组串S4电流异常')
+            db.add(fault);db.flush()
+            suspension=db.scalar(select(WashSuspension).where(WashSuspension.block_id==a02.id))
+            if suspension:suspension.active=True;suspension.fault_id=fault.id;suspension.reason='组串异常：S4';suspension.suspended_by='system';suspension.suspended_at=datetime.utcnow()
+            else:db.add(WashSuspension(block_id=a02.id,active=True,fault_id=fault.id,reason='组串异常：S4',suspended_by='system',suspended_at=datetime.utcnow()))
+        if not db.scalar(select(StringDiagnostic).where(StringDiagnostic.code=='DG-DEMO-A01')):
+            short=StringDiagnostic(code='DG-DEMO-A01',block_id=rows[0].id,kind='initial',state='manual',created_by='planner@qingling.test',error='确认健康样本仅3个，少于6个，转人工补充健康样本',evidence={'status':'manual','reason':'确认健康样本仅3个，少于6个，转人工补充健康样本','healthy_count':3,'sample_count':5,'samples_sha256':'demo-seed-short','method':'robust-z: 健康样本 median/MAD；独立留出校准阈值'})
+            for code,current,healthy in [('S1',10.0,True),('S2',10.1,True),('S3',9.9,True),('S4',4.3,False),('S5',10.0,False)]:
+                short.samples.append(StringCurrentSample(string_code=code,current_a=current,healthy=healthy))
+            db.add(short)
+        db.commit();print({key:db.scalar(select(func.count()).select_from(model)) for key,model in [('users',User),('blocks',ArrayBlock),('surveys',SoilingSurvey),('diagnostics',StringDiagnostic),('faults',StringFault)]})
 if __name__=='__main__':seed()
